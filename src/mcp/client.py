@@ -1,18 +1,19 @@
 import argparse
 import os
-from collections import defaultdict
-from contextlib import AsyncExitStack
 import json
-from mcp import ClientSession
-from mcp.client.sse import sse_client
-from openai import AsyncOpenAI
-from typing import Optional, List, Dict
 
+from contextlib import AsyncExitStack
+from mcp import ClientSession
+from openai import AsyncOpenAI
+from typing import Optional, List
 from openai.types.chat import (ChatCompletionToolParam, ChatCompletionUserMessageParam,
                                ChatCompletionAssistantMessageParam, ChatCompletionToolMessageParam,
                                ChatCompletionSystemMessageParam, ChatCompletionMessageParam,
                                ChatCompletionMessageToolCallParam)
 from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
+
+
+from mcp.client.sse import sse_client
 
 
 class MCPClient:
@@ -26,7 +27,7 @@ class MCPClient:
         self.MAX_TOKEN = int(os.getenv("OPENAI_MAX_TOKEN", 1000))
 
         # Initialize session and client objects
-        # 目前只支持单server sse协议连接
+        # only support single sse server, it may be expanded in the future
         self.session: Optional[ClientSession] = None
         self._streams_context = None
         self._session_context = None
@@ -37,6 +38,8 @@ class MCPClient:
             api_key=self.API_KEY,
         )
 
+        # only support single user now,
+        # self.history_conversation: user history conversation
         self.history_conversation: List[ChatCompletionMessageParam] = [
             ChatCompletionSystemMessageParam(
                 role='system',
@@ -63,9 +66,9 @@ class MCPClient:
         #                f"在冒险的旅程中，笨手笨脚的{self.Username}会给您添各种麻烦，您不耐烦的使用魔法解决{self.Username}碰到的各种麻烦。"
         # }
 
-    async def connect_to_sse_server(self, args: argparse.Namespace):
-        server_url = f'http://{args.host}:{args.port}/sse'
+    async def connect_to_mcp_sse_server(self, server_url: str):
         """Connect to an MCP server running with SSE transport"""
+
         # Store the context managers so they stay alive
         self._streams_context = sse_client(url=server_url)
         streams = await self._streams_context.__aenter__()
@@ -83,15 +86,31 @@ class MCPClient:
         tools = response.tools
         print("\nConnected to server with tools:", [tool.name for tool in tools])
 
-    async def cleanup(self):
+    async def clean_up(self):
         """Properly clean up the session and streams"""
         if self._session_context:
             await self._session_context.__aexit__(None, None, None)
         if self._streams_context:
             await self._streams_context.__aexit__(None, None, None)
 
+    async def process(self, query):
+        """process response from openai api"""
+        # add user query to history conversation
+        if query != '':
+            self.history_conversation.append(
+                ChatCompletionUserMessageParam(
+                    role='user',
+                    content=query
+                )
+            )
+        # get mcp server available tools
+        tools = await self._get_available_tools()
+        # TODO:
+
     async def process_stream(self, query):
-        # 添加用户消息到历史记录
+        """process stream response from openai api"""
+
+        # add user query to history conversation
         if query != '':
             self.history_conversation.append(
                 ChatCompletionUserMessageParam(
@@ -100,10 +119,10 @@ class MCPClient:
                 )
             )
 
-        # 获取可用工具列表
-        tools = await self._get_available_tools()  # 工具获取逻辑建议单独封装
+        # get mcp server available tools
+        tools = await self._get_available_tools()
 
-        # 创建初始对话流
+        # create stream response from openai api
         stream = await self.client.chat.completions.create(
             model=self.MODEL_NAME,
             messages=self.history_conversation,
@@ -112,20 +131,20 @@ class MCPClient:
             temperature=self.Temperature
         )
 
-        # 初始化状态跟踪
+        # init stream response state
         response_content = ""
         tool_calls: List[ChoiceDeltaToolCall] = []
 
-        # 处理流式响应
+        # process stream response
         async for chunk in stream:
             delta = chunk.choices[0].delta
 
-            # 处理内容流
+            # if content is not None, it means the model is generating content
             if delta.content:
                 response_content += delta.content
-                yield delta.content  # 实时返回内容
+                yield delta.content  # return stream response
 
-            # 处理工具调用流
+            # if tool_calls is not None, it means the model is generating want used tool calls
             for tool_delta in chunk.choices[0].delta.tool_calls or []:
                 existing = next((tc for tc in tool_calls if tc.index == tool_delta.index), None)
                 if existing:
@@ -133,14 +152,16 @@ class MCPClient:
                 else:
                     tool_calls.append(tool_delta)
 
-        # 添加完整的assistant响应到历史记录
+        # add full assistant response to history conversation
         if response_content:
+            # add content to history conversation
             assistant_msg = ChatCompletionAssistantMessageParam(
                 role='assistant',
                 content=response_content
             )
             self.history_conversation.append(assistant_msg)
         elif tool_calls:
+            # add model want used tool calls to history conversation
             assistant_msg = ChatCompletionAssistantMessageParam(
                 role='assistant',
                 content='',
@@ -155,28 +176,29 @@ class MCPClient:
             )
             self.history_conversation.append(assistant_msg)
 
-        # 处理检测到的工具调用
+        # Process tool calls
+        # This ordering guarantees the tool invocation order
         tool_calls.sort(key=lambda tc: tc.index)
         for tool_call in tool_calls:
             if not tool_call.function.name:
                 continue
 
             try:
-                # 执行工具调用
+                # MCP Server call tool.
                 args = json.loads(tool_call.function.arguments)
                 tool_response = await self.session.call_tool(
                     tool_call.function.name,
                     args
                 )
 
-                # 添加工具响应到历史记录
+                # add call tool response to history conversation
                 self.history_conversation.append(ChatCompletionToolMessageParam(
                     role='tool',
                     content=str(tool_response),
                     tool_call_id=tool_call.id
                 ))
 
-                # 递归处理后续响应
+                # recursive call process_stream to process tool response
                 async for content in self.process_stream(""):
                     yield content
 
@@ -208,7 +230,10 @@ class MCPClient:
             }
         ) for tool in response.tools]
 
-    async def chat_loop(self):
+    async def run_with_console(self):
+        """
+        blocking run with console
+        """
         while True:
             try:
                 query = input(f"\n{self.Username}: ").strip()
@@ -225,3 +250,12 @@ class MCPClient:
                 print(f"\n历史记录: {self.history_conversation}")
             except Exception as e:
                 print(f"\nError: {str(e)}")
+
+    async def run_with_sse_server(self):
+        """
+        TODO: blocking run with sse server
+        """
+        pass
+
+    def __del__(self):
+        self.clean_up()

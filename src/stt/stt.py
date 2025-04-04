@@ -57,12 +57,3 @@ class STT:
     def _on_wakeword_callback(self):
         print('监听。。。')
 
-
-if __name__ == '__main__':
-    stt = STT()
-
-    def process_text(text):
-        print(text)
-
-    while True:
-        stt.recorder.text(process_text)

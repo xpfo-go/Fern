@@ -1,53 +1,53 @@
 import argparse
+import asyncio
 import time
 
-from mcp.server import FastMCP
-
-from src.call_tools.system import SystemTools
-from src.call_tools.weather import WeatherTools
 from src.mcp.client import MCPClient
-from src.mcp.server import run_server
+from src.mcp.server import MCPServer
+from src.tts.tts import TTS
 
 
 async def run():
-    parser = argparse.ArgumentParser(description='Run Bonjour Service')
+    parser = argparse.ArgumentParser(description='Run Fern Service')
     parser.add_argument('--host', default='localhost', help='Host to bind to')
     parser.add_argument('--port', type=int, default=18080, help='Port to listen on')
     parser.add_argument('--debug', type=bool, default=False, help='Is debug')
+    parser.add_argument('--log_level', type=str, default='info', help='log level')
     args = parser.parse_args()
 
-    # 启动sse后台
-    app = FastMCP('Bonjour')
-    WeatherTools().register_tools(app)
-    SystemTools().register_tools(app)
+    # start mcp sse server
+    server = MCPServer()
+    await server.run_with_sync_sse(args.host, args.port, args.debug, args.log_level)
 
-    server_task, uvicorn_server = await run_server(app, args)
+    # start mcp client and connect mcp sse server
+    server_url = f'http://{args.host}:{args.port}/sse'
+    client = MCPClient()
+    await client.connect_to_mcp_sse_server(server_url)
 
-    try:
-        await server_task
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if not uvicorn_server.should_exit:
-            uvicorn_server.should_exit = True
-            await uvicorn_server.shutdown()
+    # start tts
+    tts = TTS()
 
-    return
+    # --------------- core --------------------
+    # 1. develop: test mcp client,mcp server
+    # start mcp client console
+    # await client.run_with_console()
 
-    # 服务启动完成 创建客户端
-    # client = MCPClient()
-    # try:
-    #     await client.connect_to_sse_server(args)
-    #     time.sleep(5)
-    #     #  这里阻塞
-    #     await client.chat_loop()
-    # except KeyboardInterrupt:
-    #     pass
-    # finally:
-    #     await client.cleanup()
-    #     if not uvicorn_server.should_exit:
-    #         uvicorn_server.should_exit = True
-    #         await uvicorn_server.shutdown()
-    #
-    # # 阻塞
-    # await server_task
+    # 2. develop: test llm to tts
+    while True:
+        try:
+            query = input(f"\n{client.Username}: ").strip()
+            if query.lower() == 'quit':
+                break
+            if query == '':
+                continue
+
+            async for chunk in client.process_stream(query):
+                tts.stream.feed(chunk)
+
+            asyncio.create_task(tts.stream.play())
+            while tts.stream.is_playing:
+                await asyncio.sleep(0.1)
+
+        except Exception as e:
+            print(f"\nError: {str(e)}")
+
