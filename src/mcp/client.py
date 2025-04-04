@@ -114,7 +114,7 @@ class MCPClient:
 
         # 初始化状态跟踪
         response_content = ""
-        tool_calls: Dict[int:ChoiceDeltaToolCall] = {}
+        tool_calls: List[ChoiceDeltaToolCall] = []
 
         # 处理流式响应
         async for chunk in stream:
@@ -127,12 +127,11 @@ class MCPClient:
 
             # 处理工具调用流
             for tool_delta in chunk.choices[0].delta.tool_calls or []:
-                index = tool_delta.index
-
-                if index not in tool_calls:
-                    tool_calls[index] = tool_delta
-
-                tool_calls[index].function.arguments += tool_delta.function.arguments
+                existing = next((tc for tc in tool_calls if tc.index == tool_delta.index), None)
+                if existing:
+                    existing.function.arguments += tool_delta.function.arguments
+                else:
+                    tool_calls.append(tool_delta)
 
         # 添加完整的assistant响应到历史记录
         if response_content:
@@ -152,12 +151,13 @@ class MCPClient:
                         'name': tool_call_info.function.name if tool_call_info.function.name else ''
                     },
                     type='function'
-                ) for tool_call_info in tool_calls.values()]
+                ) for tool_call_info in tool_calls]
             )
             self.history_conversation.append(assistant_msg)
 
-        # 处理检测到的工具调用  todo 要字典转列表？
-        for _, tool_call in tool_calls.items():
+        # 处理检测到的工具调用
+        tool_calls.sort(key=lambda tc: tc.index)
+        for tool_call in tool_calls:
             if not tool_call.function.name:
                 continue
 
@@ -221,5 +221,7 @@ class MCPClient:
                 async for chunk in self.process_stream(query):
                     print(chunk, end="", flush=True)
                 print()
+
+                print(f"\n历史记录: {self.history_conversation}")
             except Exception as e:
                 print(f"\nError: {str(e)}")
