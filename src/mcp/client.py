@@ -1,6 +1,9 @@
 import argparse
+import asyncio
 import os
 import json
+import queue
+import threading
 
 from contextlib import AsyncExitStack
 from mcp import ClientSession
@@ -93,7 +96,35 @@ class MCPClient:
         if self._streams_context:
             await self._streams_context.__aexit__(None, None, None)
 
+    def process_stream_async2sync(self, query):
+        llm_queue = queue.Queue()
+
+        def run_llm_async(prompt: str):
+            async def wrapper():
+                async for text in self.process_stream(prompt):
+                    llm_queue.put(text)
+                # 用 None 表示结束
+                llm_queue.put(None)
+
+            # asyncio.run(wrapper())
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            new_loop.run_until_complete(wrapper())
+            new_loop.close()
+
+        def sync_llm_generator():
+            while True:
+                text = llm_queue.get()
+                if text is None:
+                    break
+                yield text
+
+        threading.Thread(target=run_llm_async, args=(query,), daemon=True).start()
+
+        return sync_llm_generator
+
     async def process(self, query):
+        # todo 流式调用还有问题
         """process response from openai api"""
         # add user query to history conversation
         if query != '':
@@ -105,7 +136,61 @@ class MCPClient:
             )
         # get mcp server available tools
         tools = await self._get_available_tools()
-        # TODO:
+
+        response = await self.client.chat.completions.create(
+            model=self.MODEL_NAME,
+            max_tokens=1000,
+            messages=self.history_conversation,
+            tools=tools
+        )
+
+        final_text = []
+        message = response.choices[0].message
+        final_text.append(message.content or "")
+
+        # 处理响应并处理工具调用
+        while message.tool_calls:
+            # 处理每个工具调用
+            for tool_call in message.tool_calls:
+                tool_name = tool_call.function.name
+                tool_args = json.loads(tool_call.function.arguments)
+
+                # 执行工具调用
+                result = await self.session.call_tool(tool_name, tool_args)
+
+                # 将工具调用和结果添加到消息历史
+                assistant_msg = ChatCompletionAssistantMessageParam(
+                    role='assistant',
+                    content='',
+                    tool_calls=[ChatCompletionMessageToolCallParam(
+                        id=tool_call.id,
+                        function={
+                            'arguments': json.dumps(tool_args),
+                            'name': tool_name
+                        },
+                        type='function'
+                    )]
+                )
+                self.history_conversation.append(assistant_msg)
+
+                self.history_conversation.append(ChatCompletionToolMessageParam(
+                    role='tool',
+                    content=str(result),
+                    tool_call_id=tool_call.id
+                ))
+
+            # 将工具调用的结果交给 LLM
+            response = await self.client.chat.completions.create(
+                model=self.MODEL_NAME,
+                messages=self.history_conversation,
+                tools=tools
+            )
+
+            message = response.choices[0].message
+            if message.content:
+                final_text.append(message.content)
+
+        return "".join(final_text)
 
     async def process_stream(self, query):
         """process stream response from openai api"""
@@ -230,7 +315,7 @@ class MCPClient:
             }
         ) for tool in response.tools]
 
-    async def run_with_console(self):
+    async def run_with_stream_console(self):
         """
         blocking run with console
         """
@@ -248,6 +333,19 @@ class MCPClient:
                 print()
 
                 print(f"\n历史记录: {self.history_conversation}")
+            except Exception as e:
+                print(f"\nError: {str(e)}")
+
+    async def run_with_console(self):
+        while True:
+            try:
+                query = input(f"\n{self.Username}: ").strip()
+                if query.lower() == 'quit':
+                    break
+                if query == '':
+                    continue
+                response = await self.process(query)
+                print("\n菲伦：" + response)
             except Exception as e:
                 print(f"\nError: {str(e)}")
 

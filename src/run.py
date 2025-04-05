@@ -25,14 +25,17 @@ async def run():
     await client.connect_to_mcp_sse_server(server_url)
 
     # start tts
-    tts = TTS()
+    # tts = TTS()
 
     # --------------- core --------------------
     # 1. develop: test mcp client,mcp server
     # start mcp client console
     # await client.run_with_console()
+    # await client.run_with_stream_console()
 
     # 2. develop: test llm to tts
+    import pyttsx3
+    engine = pyttsx3.init()
     while True:
         try:
             query = input(f"\n{client.Username}: ").strip()
@@ -41,12 +44,10 @@ async def run():
             if query == '':
                 continue
 
-            async for chunk in client.process_stream(query):
-                tts.stream.feed(chunk)
-
-            asyncio.create_task(tts.stream.play())
-            while tts.stream.is_playing:
-                await asyncio.sleep(0.1)
+            text = await client.process(query)
+            print(f"\n菲伦: {text}")
+            engine.say(text)
+            engine.runAndWait()
 
         except Exception as e:
             print(f"\nError: {str(e)}")
