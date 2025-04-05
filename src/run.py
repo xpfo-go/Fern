@@ -48,7 +48,7 @@ async def run():
             print(f"\n菲伦: {text}")
             engine.say(text)
             engine.runAndWait()
-
+            print(client.history_conversation)
         except Exception as e:
             print(f"\nError: {str(e)}")
 

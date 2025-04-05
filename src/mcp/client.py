@@ -139,31 +139,37 @@ class MCPClient:
 
         response = await self.client.chat.completions.create(
             model=self.MODEL_NAME,
-            max_tokens=1000,
+            # max_tokens=1000,
             messages=self.history_conversation,
             tools=tools
         )
 
-        final_text = []
-        message = response.choices[0].message
-        final_text.append(message.content or "")
+        # Process response and handle tool calls
+        # 处理LLM响应和工具调用
 
-        # 处理响应并处理工具调用
-        while message.tool_calls:
-            # 处理每个工具调用
-            for tool_call in message.tool_calls:
-                tool_name = tool_call.function.name
-                tool_args = json.loads(tool_call.function.arguments)
+        for choice in response.choices:
+            message = choice.message
 
-                # 执行工具调用
-                result = await self.session.call_tool(tool_name, tool_args)
-
-                # 将工具调用和结果添加到消息历史
+            if not message.tool_calls:
                 assistant_msg = ChatCompletionAssistantMessageParam(
                     role='assistant',
-                    content='',
+                    content=message.content
+                )
+                self.history_conversation.append(assistant_msg)
+                return message.content
+            # 如果是工具调用，则获取工具名称和输入
+            else:
+                # 解包tool_calls
+                tool_name = message.tool_calls[0].function.name
+                tool_id = message.tool_calls[0].id
+                tool_args = json.loads(message.tool_calls[0].function.arguments)
+                # 执行工具调用，获取结果
+                result = await self.session.call_tool(tool_name, tool_args)
+
+                assistant_msg = ChatCompletionAssistantMessageParam(
+                    role='assistant',
                     tool_calls=[ChatCompletionMessageToolCallParam(
-                        id=tool_call.id,
+                        id=tool_id,
                         function={
                             'arguments': json.dumps(tool_args),
                             'name': tool_name
@@ -176,21 +182,10 @@ class MCPClient:
                 self.history_conversation.append(ChatCompletionToolMessageParam(
                     role='tool',
                     content=str(result),
-                    tool_call_id=tool_call.id
+                    tool_call_id=tool_id
                 ))
-
-            # 将工具调用的结果交给 LLM
-            response = await self.client.chat.completions.create(
-                model=self.MODEL_NAME,
-                messages=self.history_conversation,
-                tools=tools
-            )
-
-            message = response.choices[0].message
-            if message.content:
-                final_text.append(message.content)
-
-        return "".join(final_text)
+                # 获取下一个LLM响应
+                return await self.process("")
 
     async def process_stream(self, query):
         """process stream response from openai api"""
