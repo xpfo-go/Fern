@@ -124,7 +124,6 @@ class MCPClient:
         return sync_llm_generator
 
     async def process(self, query):
-        # todo 流式调用还有问题
         """process response from openai api"""
         # add user query to history conversation
         if query != '':

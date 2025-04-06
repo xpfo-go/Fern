@@ -1,9 +1,11 @@
 import argparse
 import asyncio
+import threading
 import time
 
 from src.mcp.client import MCPClient
 from src.mcp.server import MCPServer
+from src.stt.stt import STT
 from src.tts.tts import TTS
 
 
@@ -24,8 +26,9 @@ async def run():
     client = MCPClient()
     await client.connect_to_mcp_sse_server(server_url)
 
-    # start tts
-    # tts = TTS()
+    # system tts engine
+    import pyttsx3
+    engine = pyttsx3.init()
 
     # --------------- core --------------------
     # 1. develop: test mcp client,mcp server
@@ -34,8 +37,6 @@ async def run():
     # await client.run_with_stream_console()
 
     # 2. develop: test llm to tts
-    import pyttsx3
-    engine = pyttsx3.init()
     while True:
         try:
             query = input(f"\n{client.Username}: ").strip()
@@ -52,3 +53,22 @@ async def run():
         except Exception as e:
             print(f"\nError: {str(e)}")
 
+    # 3. stt llm tts
+    # stt = STT()
+    #
+    # async def stt_async_callback(text):
+    #     print(f"\n{client.Username}: {text}")
+    #     response = await client.process(text)
+    #     print(f"\n菲伦: {response}")
+    #     engine.say(response)
+    #     engine.runAndWait()
+    #
+    # def stt_sync_callback(text):
+    #     print(text)
+    #
+    # 第一种方式：传入的是异步函数
+    # stt.run_with_async_callback(stt_async_callback)
+    # await asyncio.Future()
+    #
+    # 第二种方式：传入的是同步函数
+    # stt.run_with_sync_callback(stt_sync_callback)
