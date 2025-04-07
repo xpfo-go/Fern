@@ -1,0 +1,10 @@
+openai==1.70.0
+pydantic==2.11.2
+python-dotenv==1.1.0
+pyttsx3==2.98
+realtimestt==0.3.100
+realtimetts==0.5.0
+Requests==2.32.3
+starlette==0.46.1
+urllib3==2.3.0
+uvicorn==0.34.0
