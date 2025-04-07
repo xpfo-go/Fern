@@ -56,7 +56,7 @@ sudo apt update && sudo apt install espeak ffmpeg libespeak1
 ```
 
 ## STT:
-
+[RealtimeSTT GitHub](https://github.com/KoljaB/RealtimeSTT)
 ```bash
 pip install RealtimeSTT
 ```
@@ -163,3 +163,33 @@ If you didn't use CUDA models before, some additional steps might be needed one 
         ```bash
         scoop install ffmpeg
         ```    
+
+####  Train your own OpenWakeWord models
+Look [here](https://github.com/dscripka/openWakeWord?tab=readme-ov-file#training-new-models) for information about how to train your own OpenWakeWord models. You can use a [simple Google Colab notebook](https://colab.research.google.com/drive/1q1oe2zOyZp7UsB3jJiQ1IFn8z5YfjwEb?usp=sharing) for a start or use a [more detailed notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb) that enables more customization (can produce high quality models, but requires more development experience).
+
+### Convert model to ONNX format
+
+You might need to use tf2onnx to convert tensorflow tflite models to onnx format:
+
+```bash
+pip install -U tf2onnx
+python -m tf2onnx.convert --tflite my_model_filename.tflite --output my_model_filename.onnx
+```
+
+## FAQ
+
+### Q: I encountered the following error: "Unable to load any of {libcudnn_ops.so.9.1.0, libcudnn_ops.so.9.1, libcudnn_ops.so.9, libcudnn_ops.so} Invalid handle. Cannot load symbol cudnnCreateTensorDescriptor." How do I fix this?
+
+**A:** This issue arises from a mismatch between the version of `ctranslate2` and cuDNN. The `ctranslate2` library was updated to version 4.5.0, which uses cuDNN 9.2. There are two ways to resolve this issue:
+1. **Downgrade `ctranslate2` to version 4.4.0**:
+   ```bash
+   pip install ctranslate2==4.4.0
+   ```
+2. **Upgrade cuDNN** on your system to version 9.2 or above.
+
+## Contribution
+
+Contributions are always welcome! 
+
+Shoutout to [Steven Linn](https://github.com/stevenlafl) for providing docker support. 
+
