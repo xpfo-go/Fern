@@ -87,8 +87,8 @@ class MCPServer:
 
     async def clean_up(self):
         if self.sse_server_task:
-            self.sse_server_task.cancel()
             try:
+                self.sse_server_task.cancel()
                 await self.sse_server_task
             except asyncio.CancelledError:
                 pass
@@ -97,6 +97,3 @@ class MCPServer:
 
     def __del__(self):
         self.clean_up()
-        # if not self.sse_uvicorn_server.should_exit:
-        #     self.sse_uvicorn_server.should_exit = True
-        #     await self.sse_uvicorn_server.shutdown()

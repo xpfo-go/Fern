@@ -2,11 +2,18 @@ import argparse
 import asyncio
 import threading
 import time
+import logging
 
 from src.mcp.client import MCPClient
 from src.mcp.server import MCPServer
 from src.stt.stt import STT
 from src.tts.tts import TTS
+
+for logger_name in [__name__, 'uvicorn', 'uvicorn.error', 'uvicorn.access', 'openai', 'requests', 'urllib3']:
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.WARNING)
+    logger.addHandler(logging.FileHandler('logs/fern.log'))
+    logger.propagate = False
 
 
 async def run():
@@ -34,24 +41,24 @@ async def run():
     # 1. develop: test mcp client,mcp server
     # start mcp client console
     # await client.run_with_console()
-    # await client.run_with_stream_console()
+    await client.run_with_stream_console()
 
     # 2. develop: test llm to tts
-    while True:
-        try:
-            query = input(f"\n{client.Username}: ").strip()
-            if query.lower() == 'quit':
-                break
-            if query == '':
-                continue
-
-            text = await client.process(query)
-            print(f"\n菲伦: {text}")
-            engine.say(text)
-            engine.runAndWait()
-            print(client.history_conversation)
-        except Exception as e:
-            print(f"\nError: {str(e)}")
+    # while True:
+    #     try:
+    #         query = input(f"\n{client.Username}: ").strip()
+    #         if query.lower() == 'quit':
+    #             break
+    #         if query == '':
+    #             continue
+    #
+    #         text = await client.process(query)
+    #         print(f"\n菲伦: {text}")
+    #         engine.say(text)
+    #         engine.runAndWait()
+    #         print(client.history_conversation)
+    #     except Exception as e:
+    #         print(f"\nError: {str(e)}")
 
     # 3. stt llm tts
     # stt = STT()
