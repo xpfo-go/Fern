@@ -164,7 +164,7 @@ If you didn't use CUDA models before, some additional steps might be needed one 
         scoop install ffmpeg
         ```    
 
-####  Train your own OpenWakeWord models
+###  Train your own OpenWakeWord models
 Look [here](https://github.com/dscripka/openWakeWord?tab=readme-ov-file#training-new-models) for information about how to train your own OpenWakeWord models. You can use a [simple Google Colab notebook](https://colab.research.google.com/drive/1q1oe2zOyZp7UsB3jJiQ1IFn8z5YfjwEb?usp=sharing) for a start or use a [more detailed notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb) that enables more customization (can produce high quality models, but requires more development experience).
 
 ### Convert model to ONNX format
